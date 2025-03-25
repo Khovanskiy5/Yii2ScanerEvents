@@ -70,18 +70,42 @@ function processFile($filePath, &$events, $source) {
 /**
  * Извлечение имени класса из содержимого файла
  */
-function getClassNameFromContent($content): string {
+/**
+ * Извлечение полного имени класса (с namespace) из содержимого файла PHP
+ */
+function getClassNameFromContent(string $content): string {
+    $tokens = token_get_all($content);
     $namespace = $class = '';
+    $namespaceFound = false;
+    $classFound = false;
 
-    if (preg_match('/namespace\s+([^\s;]+)/', $content, $matches)) {
-        $namespace = $matches[1] ?? '';
+    foreach ($tokens as $token) {
+        if ($token[0] === T_NAMESPACE && !$namespaceFound) {
+            $namespaceFound = true;
+            $namespace = '';
+            continue;
+        }
+
+        if ($namespaceFound && !$classFound) {
+            if (is_array($token) && in_array($token[0], [T_STRING, T_NS_SEPARATOR])) {
+                $namespace .= $token[1];
+            } elseif ($token === ';' || $token === '{') {
+                $namespaceFound = false;
+            }
+        }
+
+        if ($token[0] === T_CLASS && !$classFound) {
+            $classFound = true;
+            continue;
+        }
+
+        if ($classFound && $token[0] === T_STRING) {
+            $class = $token[1];
+            break;
+        }
     }
 
-    if (preg_match('/class\s+([^\s{]+)/', $content, $matches)) {
-        $class = $matches[1] ?? '';
-    }
-
-    return $namespace ? $namespace . '\\' . $class : 'Unknown class';
+    return ($namespace ? $namespace . '\\' : '') . ($class ?: 'UnknownClass');
 }
 
 /**
@@ -173,8 +197,8 @@ HTML;
         $html .= sprintf(
             '<div class="event-card" data-searchable="%s">
                 <div><span class="event-name">%s %s</span><span class="event-type %s">%s</span><span class="source-badge">%s</span></div>
-                <div class="event-class">%s</div>
-                <div class="event-file">%s</div>
+                <div class="event-class">Class: %s</div>
+                <div class="event-file">File: %s</div>
                 <div><strong>Value:</strong> %s</div>
             </div>',
             $searchable,
